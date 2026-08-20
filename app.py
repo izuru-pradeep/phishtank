@@ -595,7 +595,7 @@ def extract_url_features(url):
     URL_FEATURE_COLUMNS order, and return it as a single-row DataFrame ready
     for the URL model's .predict(). Pure string processing - no network
     call, so this always succeeds even when the page is unreachable."""
-    url = ensure_trailing_slash(url)
+    # url = ensure_trailing_slash(url)  # commented out for now
 
     lexical = [
         url_length(url), path_depth(url), has_ip(url), is_shortened_url(url),
