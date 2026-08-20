@@ -836,10 +836,26 @@ def get_prediction_details(model, features_df):
 
 # Weights = each model's own cross-validated accuracy from its training
 # notebook, so the more reliable track counts for more in the blend.
-CONTENT_MODEL_ACCURACY = 0.967  # content-based RF, ~96.7% mean CV accuracy (see CONFIGURATION note above)
-URL_MODEL_ACCURACY = 0.967      # TODO: replace with the URL model's own measured CV accuracy from
-                                 # URL_Model_Train_Note_Book.ipynb - currently a placeholder equal to
-                                 # the content model's, since no figure for the URL track was supplied.
+#
+# CONTENT_MODEL_ACCURACY (2026-08-20 update): the content-based training data
+# collapses from ~67k rows to ~35.5k once exact-duplicate feature vectors are
+# removed (many phishing pages share near-identical HTML templates), which
+# left the training set at roughly 30,343 legitimate vs 5,204 phishing rows -
+# an ~85/15 imbalance the model was silently trained on. The 0.967 figure
+# previously here was measured before that imbalance was corrected, and the
+# real held-out accuracy under the imbalance was closer to 94%, with phishing
+# recall as low as 0.36-0.71 (i.e. missing a large share of real phishing
+# examples) - a serious problem for a security tool. rf_model.pkl has been
+# retrained on the deduplicated data with same-feature/conflicting-label rows
+# removed (127 feature vectors, 4,116 rows, had appeared under both labels)
+# and the training set rebalanced with RandomOverSampler. 5-fold stratified
+# CV on the fixed pipeline gives accuracy 0.941 / precision 0.845 /
+# recall 0.735 / F1 0.786 - lower headline accuracy than the old 0.967, but
+# an honest number, and phishing recall roughly doubled versus the unfixed
+# baseline.
+CONTENT_MODEL_ACCURACY = 0.941  # content-based RF, 0.941 mean 5-fold CV accuracy post-imbalance-fix
+URL_MODEL_ACCURACY = 0.970      # URL-based RF, 0.9698 mean 5-fold CV accuracy (URL_Model_Train_Notebook2026_1.ipynb,
+                                 # Section 6 output) - previously a placeholder copied from the content model.
 
 
 def compute_combined_risk(content_phishing_prob, url_phishing_prob):
