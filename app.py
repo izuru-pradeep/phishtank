@@ -1021,19 +1021,53 @@ def get_risk_band(percentage):
 
 
 # =============================================================================
-# URL NORMALISATION + PAGE FETCHING
+# URL VALIDATION + PAGE FETCHING
 # =============================================================================
 
-def normalize_url(raw_url: str) -> str:
-    """Add a scheme if the user typed a bare domain, e.g. 'example.com' ->
-    'http://example.com'. Both extractors rely on urlparse() splitting the
-    URL into scheme/netloc/path correctly, which requires a scheme."""
-    raw_url = raw_url.strip()
-    if not raw_url:
-        return raw_url
-    if "://" not in raw_url:
-        raw_url = "http://" + raw_url
-    return raw_url
+SUPPORTED_SCHEMES = ("http", "https")
+
+
+def validate_url(raw_url: str):
+    """Check that the user supplied a usable http/https URL.
+
+    Returns (cleaned_url, None) when the input is acceptable, or
+    (None, message) when it is not, so the caller can show the message and
+    stop before any analysis runs.
+
+    The scheme is required rather than guessed: Has_HTTPS is a real feature
+    in the URL model, so silently prepending 'http://' to a site that
+    actually serves https would feed the model a value the user never
+    entered and skew the result.
+    """
+    cleaned = raw_url.strip()
+
+    if not cleaned:
+        return None, "Please enter a URL to check."
+
+    parsed = urlparse(cleaned)
+    scheme = parsed.scheme.lower()
+
+    # 'example.com:8080/path' parses with 'example.com' as the scheme, so a
+    # missing protocol is really "no '://' in the input", not "no scheme".
+    if "://" not in cleaned:
+        return None, (
+            "Please add the protocol to the start of the address. "
+            f"Try `https://{cleaned}` or `http://{cleaned}` instead."
+        )
+
+    if scheme not in SUPPORTED_SCHEMES:
+        return None, (
+            f"Addresses starting with `{scheme}:` are not supported. "
+            "Please enter a URL that starts with `https://` or `http://`."
+        )
+
+    if not parsed.netloc:
+        return None, (
+            "That address is missing a domain name. "
+            "A complete URL looks like `https://example.com/login`."
+        )
+
+    return cleaned, None
 
 
 def fetch_page(url):
@@ -1244,10 +1278,9 @@ def main():
         )
 
     # ---- URL input ----
-    # A short, friendly note above the box. The URL must carry its scheme so
-    # that urlparse() can split it into scheme/netloc/path correctly - the
-    # Has_HTTPS feature in particular depends on it, and normalize_url()
-    # otherwise has to guess http:// on the user's behalf.
+    # A short, friendly note above the box. The scheme is required rather
+    # than guessed - see validate_url() for why - so telling the user up
+    # front avoids them hitting the warning after clicking Analyse.
     st.info(
         "**Please include the protocol when entering a URL.** "
         "Starting the address with `https://` or `http://` lets both checks "
@@ -1267,7 +1300,10 @@ def main():
         if content_model is None or url_model is None:
             st.stop()
 
-        url = normalize_url(raw_url)
+        url, url_error = validate_url(raw_url)
+        if url_error:
+            st.warning(url_error, icon="\N{WARNING SIGN}")
+            st.stop()
 
         with st.spinner("Fetching the page and running both checks..."):
             # Only the content-based track needs a live fetch.
