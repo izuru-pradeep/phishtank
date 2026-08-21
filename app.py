@@ -1252,20 +1252,14 @@ def main():
         "**Please include the protocol when entering a URL.** "
         "Starting the address with `https://` or `http://` lets both checks "
         "read the address exactly as your browser would - for example "
-        "`https://example.com/login` rather than `example.com/login`.\n\n"
-        "If the protocol is left out, `http://` is assumed, which can make a "
-        "perfectly safe site look riskier than it really is.",
+        "`https://example.com/login`",
         icon="\N{ELECTRIC LIGHT BULB}",
     )
 
     raw_url = st.text_input(
         "Enter a URL to check",
         placeholder="https://example.com/login",
-        help=(
-            "Paste the full address, including https:// or http://. "
-            "Copying it straight from your browser's address bar is the "
-            "easiest way to get this right."
-        ),
+        help="Copying straight from your browser's address bar is easiest.",
     )
     analyse_clicked = st.button("🔍 Analyse", type="primary", use_container_width=True)
 
