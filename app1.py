@@ -581,51 +581,6 @@ URL_FEATURE_COLUMNS = [
 ]
 
 
-WWW_PREFIX_PATTERN = re.compile(r"^www\d*\.", re.IGNORECASE)
-
-
-def strip_www_prefix(url: str) -> str:
-    """Remove a leading 'www.' (or 'www2.', 'www3.', ...) from the host so
-    that 'https://www.example.com/' and 'https://example.com/' produce an
-    identical feature vector.
-
-    Rationale: the legitimate half of the training corpus came from the
-    Tranco list, which stores bare registrable domains (youtube.com), while
-    the phishing half came from PhishTank, which stores full URLs that
-    usually carry a subdomain. The model therefore learned 'has a subdomain
-    / longer domain / one more dot' as a phishing signal, which is an
-    artefact of how the two datasets were collected rather than a real
-    property of phishing URLs. Canonicalising the host at inference time
-    removes that artefact and puts the input back into the distribution the
-    model was actually trained on.
-
-    Only the feature vector uses the stripped URL - the live page fetch
-    still uses the URL exactly as the user typed it, because some hosts
-    only answer on the www. name.
-    """
-    parsed = urlparse(url)
-    netloc = parsed.netloc
-
-    # Keep any userinfo and port untouched; only the hostname is normalised.
-    userinfo = ""
-    if "@" in netloc:
-        userinfo, netloc = netloc.rsplit("@", 1)
-        userinfo += "@"
-    port = ""
-    if ":" in netloc and not netloc.startswith("["):
-        netloc, _, port_part = netloc.partition(":")
-        port = ":" + port_part
-
-    if WWW_PREFIX_PATTERN.match(netloc):
-        candidate = WWW_PREFIX_PATTERN.sub("", netloc, count=1)
-        # Guard against degenerate hosts such as 'www.com', where stripping
-        # would leave something that is no longer a domain.
-        if "." in candidate:
-            netloc = candidate
-
-    return parsed._replace(netloc=userinfo + netloc + port).geturl()
-
-
 def ensure_trailing_slash(url: str) -> str:
     """Add a trailing slash to the URL's path if it doesn't already end with
     one - matches how URLs were normalised before feature extraction during
@@ -640,7 +595,6 @@ def extract_url_features(url):
     URL_FEATURE_COLUMNS order, and return it as a single-row DataFrame ready
     for the URL model's .predict(). Pure string processing - no network
     call, so this always succeeds even when the page is unreachable."""
-    url = strip_www_prefix(url)
     url = ensure_trailing_slash(url)
 
     lexical = [
