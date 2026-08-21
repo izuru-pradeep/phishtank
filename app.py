@@ -2,13 +2,9 @@
 Phishing Website Detection - Streamlit Web Application
 ========================================================
 
-This is the final artefact for the "Machine Learning-Based Phishing Website
-Detection" final year project (module 6CS007).
-
-Per the Artefact Design and Test Plan (Section 4.3), the content-based and
-URL-based models are kept as two INDEPENDENT model suites. This app never
-merges them into a single label - it runs both, and reports two separate
-verdicts side by side, e.g.:
+Two independent classifiers are run against the same URL and reported as
+two separate verdicts; they are never merged into a single label, so a
+disagreement between them stays visible to the user, e.g.:
 
     "Web content seems legitimate, URL seems phishing."
 
@@ -46,22 +42,21 @@ import streamlit as st
 from bs4 import BeautifulSoup
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-# The content-based notebooks disabled SSL verification when fetching pages
-# (some phishing hosts use invalid/self-signed certificates). We do the same
-# here, so we suppress the resulting warning noise.
+# SSL verification is disabled when fetching pages, because many phishing
+# hosts serve invalid or self-signed certificates and would otherwise be
+# unreachable. Suppress the resulting warning noise.
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-# Folder holding the exported .pkl model files (see the two training
-# notebooks). Both files must be placed here before running the app.
+# Folder holding the exported .pkl model files. Both must be placed here
+# before running the app.
 MODELS_DIR = "models"
 
-# Which trained classifier to load for each independent track. These default
-# to Random Forest, since that was the strongest performer on the
-# content-based track (~96.7% mean cross-validated accuracy).
+# Which trained classifier to load for each independent track. Both are
+# Random Forest, which scored highest of the classifiers evaluated.
 CONTENT_MODEL_FILENAME = "rf_model.pkl"
 URL_MODEL_FILENAME = "url_random_forest_model.pkl"
 
@@ -75,11 +70,10 @@ PAGE_ICON = "🛡️"
 # =============================================================================
 # CONTENT-BASED FEATURE EXTRACTION (43 features)
 # ------------------------------------------------------------------------
-# These functions are carried over unchanged from the content-based data
-# collector notebooks, so the feature values computed here line up exactly
-# with the columns the content-based model (rf_model.pkl) was trained on.
 # Each function inspects one aspect of the parsed HTML (a BeautifulSoup
-# object).
+# object). The definitions must stay identical to the ones used to build the
+# training data, or the values computed here will not mean the same thing to
+# rf_model.pkl as the values it was fitted on.
 # =============================================================================
 
 def has_title(soup):
@@ -288,10 +282,9 @@ def number_of_table(soup):
     return len(soup.find_all("table"))
 
 
-# Fixed column order for the content-based feature set - must match the
-# 'columns' list used in the data collector notebooks exactly, since that is
-# the order rf_model.pkl was trained on. Verified against
-# rf_model.feature_names_in_.
+# Fixed column order for the content-based feature set. This is the order
+# rf_model.pkl was fitted on - verified against rf_model.feature_names_in_ -
+# so do not reorder.
 CONTENT_FEATURE_COLUMNS = [
     'has_title', 'has_input', 'has_button', 'has_image', 'has_submit', 'has_link',
     'has_password', 'has_email_input', 'has_hidden_element', 'has_audio', 'has_video',
@@ -330,12 +323,11 @@ def extract_content_features(soup):
 # =============================================================================
 # URL-BASED FEATURE EXTRACTION (38 features)
 # ------------------------------------------------------------------------
-# Carried over unchanged from feature_extractor.py / the URL training
-# notebook, so the feature values here line up exactly with what
-# url_random_forest_model.pkl was trained on (verified against
-# url_model.feature_names_in_). Every feature is computed directly from the
-# URL string - no WHOIS lookup or live page fetch is needed, so this track
-# always runs, even when the page itself is unreachable.
+# These definitions must stay identical to the ones used to build the
+# training data (verified against url_model.feature_names_in_). Every
+# feature is computed directly from the URL string - no WHOIS lookup or live
+# page fetch is needed, so this track always runs, even when the page itself
+# is unreachable.
 # =============================================================================
 
 SHORTENING_SERVICES = [
@@ -558,11 +550,10 @@ def has_fragment(url):
 # Column order matches url_random_forest_model.pkl's feature_names_in_
 # exactly - do not reorder.
 #
-# NOTE: Has_Unicode_Domain and Brand_Similarity were removed from this list
-# (2026-08-19) because the currently deployed url_random_forest_model.pkl
-# was never retrained after those two columns were added to the feature
-# pipeline - it raises "Feature names unseen at fit time" for both. If you
-# retrain the model on the extended feature set, add them back here (and to
+# NOTE: Has_Unicode_Domain and Brand_Similarity are deliberately absent.
+# The deployed url_random_forest_model.pkl was fitted without them and
+# raises "Feature names unseen at fit time" if they are supplied. If the
+# model is refitted on the extended feature set, add them back here (and to
 # extract_url_features() and URL_FEATURE_DISPLAY below) in their original
 # positions: Has_Unicode_Domain right after Has_Sensitive_Word, and
 # Brand_Similarity at the end.
@@ -589,15 +580,14 @@ def strip_www_prefix(url: str) -> str:
     that 'https://www.example.com/' and 'https://example.com/' produce an
     identical feature vector.
 
-    Rationale: the legitimate half of the training corpus came from the
-    Tranco list, which stores bare registrable domains (youtube.com), while
-    the phishing half came from PhishTank, which stores full URLs that
-    usually carry a subdomain. The model therefore learned 'has a subdomain
-    / longer domain / one more dot' as a phishing signal, which is an
-    artefact of how the two datasets were collected rather than a real
-    property of phishing URLs. Canonicalising the host at inference time
-    removes that artefact and puts the input back into the distribution the
-    model was actually trained on.
+    Without this, 'www.' shifts seven feature values at once
+    (Subdomain_Count, Dot_Count, Domain_Length, URL_Length, Letter_Count,
+    URL_Entropy, Domain_Entropy), two of which are the model's highest-
+    importance features. The legitimate training rows were stored as bare
+    registrable domains while the phishing rows carried subdomains, so the
+    model treats a leading 'www.' as evidence of phishing. Canonicalising
+    the host removes that skew and makes the two spellings of the same site
+    score identically.
 
     Only the feature vector uses the stripped URL - the live page fetch
     still uses the URL exactly as the user typed it, because some hosts
@@ -872,36 +862,19 @@ def get_prediction_details(model, features_df):
 # =============================================================================
 # COMBINED RISK SCORE
 # ------------------------------------------------------------------------
-# The two verdict cards stay independent (per the Artefact Design and Test
-# Plan, Section 4.3) - but a raw side-by-side view can leave a non-technical
-# user unsure what to actually do. This section folds both models'
-# phishing-probabilities into one 0-100% risk score, weighted by each
-# model's own measured accuracy, and maps that score to plain-English
+# The two verdict cards stay independent, but a raw side-by-side view can
+# leave a non-technical user unsure what to actually do. This section folds
+# both models' phishing-probabilities into one 0-100% risk score, weighted
+# by each model's measured accuracy, and maps that score to plain-English
 # guidance.
 # =============================================================================
 
-# Weights = each model's own cross-validated accuracy from its training
-# notebook, so the more reliable track counts for more in the blend.
-#
-# CONTENT_MODEL_ACCURACY (2026-08-20 update): the content-based training data
-# collapses from ~67k rows to ~35.5k once exact-duplicate feature vectors are
-# removed (many phishing pages share near-identical HTML templates), which
-# left the training set at roughly 30,343 legitimate vs 5,204 phishing rows -
-# an ~85/15 imbalance the model was silently trained on. The 0.967 figure
-# previously here was measured before that imbalance was corrected, and the
-# real held-out accuracy under the imbalance was closer to 94%, with phishing
-# recall as low as 0.36-0.71 (i.e. missing a large share of real phishing
-# examples) - a serious problem for a security tool. rf_model.pkl has been
-# retrained on the deduplicated data with same-feature/conflicting-label rows
-# removed (127 feature vectors, 4,116 rows, had appeared under both labels)
-# and the training set rebalanced with RandomOverSampler. 5-fold stratified
-# CV on the fixed pipeline gives accuracy 0.941 / precision 0.845 /
-# recall 0.735 / F1 0.786 - lower headline accuracy than the old 0.967, but
-# an honest number, and phishing recall roughly doubled versus the unfixed
-# baseline.
-CONTENT_MODEL_ACCURACY = 0.941  # content-based RF, 0.941 mean 5-fold CV accuracy post-imbalance-fix
-URL_MODEL_ACCURACY = 0.970      # URL-based RF, 0.9698 mean 5-fold CV accuracy (URL_Model_Train_Notebook2026_1.ipynb,
-                                 # Section 6 output) - previously a placeholder copied from the content model.
+# Weights = each model's measured mean 5-fold cross-validated accuracy, so
+# the more reliable track counts for more in the blend. Update these
+# constants whenever either model is refitted, or the weighting silently
+# drifts away from real performance.
+CONTENT_MODEL_ACCURACY = 0.941  # content-based RF: accuracy 0.941, precision 0.845, recall 0.735, F1 0.786
+URL_MODEL_ACCURACY = 0.970      # URL-based RF: accuracy 0.9698
 
 
 def compute_combined_risk(content_phishing_prob, url_phishing_prob):
@@ -1245,8 +1218,7 @@ def main():
     with st.sidebar:
         st.subheader("About this tool")
         st.write(
-            "This is a final-year project artefact. It runs two independently "
-            "trained classifier suites:"
+            "This tool runs two independently trained classifier suites:"
         )
         st.markdown("- **Content-based** — 43 features from the page's HTML/DOM")
         st.markdown("- **URL-based** — 38 features from the URL's structure alone "
@@ -1258,8 +1230,8 @@ def main():
             "Each verdict also has a 'Why this result?' panel showing the top "
             "factors behind that specific prediction."
         )
-        st.caption("For academic demonstration only - not a substitute for "
-                   "professional security judgement.")
+        st.caption("A guide only - not a substitute for professional "
+                   "security judgement.")
 
     # ---- Load models once ----
     content_model = load_model(CONTENT_MODEL_FILENAME)
@@ -1273,8 +1245,7 @@ def main():
         st.warning(
             f"Model file(s) not found in `{MODELS_DIR}/`. Expected "
             f"`{CONTENT_MODEL_FILENAME}` and `{URL_MODEL_FILENAME}`. "
-            "Export these from the training notebooks and place them in the "
-            "models/ folder next to app.py."
+            "Place both files in the models/ folder next to app.py."
         )
 
     # ---- URL input ----
