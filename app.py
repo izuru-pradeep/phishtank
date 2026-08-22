@@ -1023,6 +1023,18 @@ def validate_url(raw_url: str):
     # 'example.com:8080/path' parses with 'example.com' as the scheme, so a
     # missing protocol is really "no '://' in the input", not "no scheme".
     if "://" not in cleaned:
+        # A bare 'scheme:value' input (mailto:, tel:, javascript:) carries a
+        # scheme even though it has no '://', so suggesting 'https://' + the
+        # whole string would propose an address that cannot exist. Detect that
+        # case first and report the scheme as unsupported instead.
+        first_segment = cleaned.split("/")[0]
+        if ":" in first_segment:
+            possible_scheme = first_segment.split(":", 1)[0].lower()
+            if possible_scheme and "." not in possible_scheme and not possible_scheme.isdigit():
+                return None, (
+                    f"Addresses starting with `{possible_scheme}:` are not supported. "
+                    "Please enter a URL that starts with `https://` or `http://`."
+                )
         return None, (
             "Please add the protocol to the start of the address. "
             f"Try `https://{cleaned}` or `http://{cleaned}` instead."
