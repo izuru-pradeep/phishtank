@@ -873,7 +873,7 @@ def get_prediction_details(model, features_df):
 # the more reliable track counts for more in the blend. Update these
 # constants whenever either model is refitted, or the weighting silently
 # drifts away from real performance.
-CONTENT_MODEL_ACCURACY = 0.941  # content-based RF: accuracy 0.941, precision 0.845, recall 0.735, F1 0.786
+CONTENT_MODEL_ACCURACY = 0.906  # content-based RF (rebalanced dataset): accuracy 0.906, precision 0.889, recall 0.827, F1 0.857
 URL_MODEL_ACCURACY = 0.970      # URL-based RF: accuracy 0.9698
 
 
